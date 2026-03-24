@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FormFlow — PDF ↔ Word Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --accent: #E8553A;
+    --accent-light: #FFF0EC;
+    --bg: #FAFAF8;
+    --surface: #FFFFFF;
+    --text-1: #1A1A18;
+    --text-2: #6B6B66;
+    --border: #E5E5E0;
+    --green: #1A8754;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text-1);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+  header {
+    padding: 44px 24px 0;
+    text-align: center;
+  }
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 46px;
+    font-weight: 400;
+    letter-spacing: -1.5px;
+    line-height: 1.05;
+  }
+  h1 span { color: var(--accent); font-style: italic; }
+  .subtitle {
+    color: var(--text-2);
+    font-size: 15px;
+    margin-top: 8px;
+    font-weight: 300;
+    letter-spacing: .3px;
+  }
+
+  /* ── Tabs ── */
+  .tab-bar {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin: 36px auto 0;
+    padding: 4px;
+    background: #EEEEE9;
+    border-radius: 14px;
+    width: fit-content;
+  }
+  .tab-bar button {
+    padding: 12px 34px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    transition: all .25s ease;
+    background: transparent;
+    color: var(--text-2);
+  }
+  .tab-bar button.active {
+    background: var(--surface);
+    color: var(--text-1);
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  }
+
+  /* ── Main ── */
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── Dropzone ── */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 20px;
+    padding: 56px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .3s ease;
+    background: var(--surface);
+    position: relative;
+    animation: fadeUp .4s ease both;
+  }
+  .dropzone.dragging {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+  .dropzone.has-file {
+    padding: 28px 32px;
+    border-style: solid;
+    border-color: #C8E6C9;
+    background: #F6FFF6;
+  }
+  .dropzone-icon { font-size: 48px; display: block; margin-bottom: 12px; opacity: .85; }
+  .dropzone-title { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
+  .dropzone-hint { font-size: 13px; color: var(--text-2); font-weight: 300; }
+
+  .file-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    text-align: left;
+  }
+  .file-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .file-icon.pdf { background: linear-gradient(135deg, #FFE0D6, #FFEEE8); }
+  .file-icon.docx { background: linear-gradient(135deg, #D6E0FF, #E8EEFF); }
+  .file-name { font-size: 15px; font-weight: 500; word-break: break-all; }
+  .file-size { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+  .remove-btn {
+    margin-left: auto;
+    background: none; border: none; cursor: pointer;
+    font-size: 20px; color: var(--text-2);
+    padding: 8px; border-radius: 8px;
+    transition: color .2s;
+    flex-shrink: 0;
+  }
+  .remove-btn:hover { color: var(--accent); }
+
+  /* ── Buttons ── */
+  .convert-btn {
+    width: 100%;
+    padding: 18px;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 24px;
+    transition: all .3s ease;
+    background: var(--accent);
+    color: #FFF;
+    box-shadow: 0 4px 20px rgba(232,85,58,.25);
+    letter-spacing: .3px;
+  }
+  .convert-btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+  .convert-btn:disabled {
+    background: #D9D9D4;
+    color: #FFF;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .download-btn {
+    width: 100%;
+    padding: 18px;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 24px;
+    background: var(--green);
+    color: #FFF;
+    box-shadow: 0 4px 20px rgba(26,135,84,.25);
+    letter-spacing: .3px;
+    animation: fadeUp .4s ease both;
+  }
+  .download-btn:hover { opacity: .9; transform: translateY(-1px); }
+
+  /* ── Status ── */
+  .status-card {
+    margin-top: 24px;
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid var(--border);
+    animation: fadeUp .35s ease both;
+  }
+  .status-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .spinner {
+    display: inline-block;
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+  }
+  .progress-track {
+    height: 6px;
+    background: #F0F0EC;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #FF7A5C);
+    border-radius: 3px;
+    transition: width .4s ease;
+  }
+  .steps { margin-top: 16px; display: flex; flex-direction: column; gap: 7px; }
+  .step {
+    font-size: 13px;
+    color: var(--text-2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 300;
+  }
+  .step.done { color: #4CAF50; }
+  .step.active { color: var(--text-1); font-weight: 500; }
+  .error-box {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: #FFF5F5;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #C0392B;
+    line-height: 1.55;
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 13px;
+    color: var(--text-2);
+    font-weight: 500;
+    margin-bottom: 8px;
+    margin-top: 18px;
+  }
+
+  /* ── Info box ── */
+  .info-box {
+    margin-top: 44px;
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 28px;
+    border: 1px solid var(--border);
+  }
+  .info-box h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 22px;
+    font-weight: 400;
+    margin-bottom: 18px;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 520px) { .info-grid { grid-template-columns: 1fr; } }
+  .info-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .info-item span:first-child { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .info-item p {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.55;
+    font-weight: 300;
+  }
+
+  footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 12px;
+    color: var(--text-2);
+    font-weight: 300;
+    border-top: 1px solid var(--border);
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Form<span>Flow</span></h1>
+  <p class="subtitle">Convert fillable PDFs to editable Word docs — and back again</p>
+  <div class="tab-bar">
+    <button id="tab-pdf" class="active" onclick="switchMode('pdf-to-word')">PDF → Word</button>
+    <button id="tab-word" onclick="switchMode('word-to-pdf')">Word → PDF</button>
+  </div>
+</header>
+
+<main>
+  <!-- PDF → Word -->
+  <div id="panel-pdf">
+    <div class="dropzone" id="drop-pdf"
+      onclick="document.getElementById('input-pdf').click()">
+      <span class="dropzone-icon">📄</span>
+      <div class="dropzone-title">Drop your PDF file here</div>
+      <div class="dropzone-hint">or click to browse · .pdf files supported</div>
+    </div>
+    <input type="file" id="input-pdf" accept=".pdf" style="display:none">
+  </div>
+
+  <!-- Word → PDF -->
+  <div id="panel-word" class="hidden">
+    <div class="dropzone" id="drop-docx"
+      onclick="document.getElementById('input-docx').click()">
+      <span class="dropzone-icon">📝</span>
+      <div class="dropzone-title">Drop your Word file here</div>
+      <div class="dropzone-hint">or click to browse · .docx files supported</div>
+    </div>
+    <input type="file" id="input-docx" accept=".docx" style="display:none">
+
+    <div class="section-label">Original PDF template (required)</div>
+    <div class="dropzone" id="drop-template"
+      onclick="document.getElementById('input-template').click()">
+      <span class="dropzone-icon">📄</span>
+      <div class="dropzone-title">Drop the original PDF template</div>
+      <div class="dropzone-hint">or click to browse · .pdf files supported</div>
+    </div>
+    <input type="file" id="input-template" accept=".pdf" style="display:none">
+  </div>
+
+  <button class="convert-btn" id="convert-btn" disabled onclick="handleConvert()">Convert</button>
+
+  <div id="status-area"></div>
+  <div id="download-area"></div>
+
+  <div class="info-box">
+    <h2>How it works</h2>
+    <div class="info-grid">
+      <div class="info-item"><span>🔍</span><p>Extracts all fillable form fields — text boxes, checkboxes, radio buttons, dropdowns</p></div>
+      <div class="info-item"><span>📝</span><p>Creates an editable Word table with field names, types, and current values</p></div>
+      <div class="info-item"><span>🔄</span><p>Edit values in Word, then convert back using the original PDF as template</p></div>
+      <div class="info-item"><span>🔒</span><p>100% client-side — your files never leave your browser</p></div>
+    </div>
+  </div>
+</main>
+
+<footer>All processing happens in your browser · No uploads · No servers</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let currentMode = 'pdf-to-word';
+let pdfFile = null;
+let docxFile = null;
+let templateFile = null;
+let resultBlob = null;
+let resultName = '';
+
+// ── Utilities ──
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+const formatSize = (b) => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(1) + ' MB';
+const escXml = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function switchMode(mode) {
+  currentMode = mode;
+  pdfFile = null; docxFile = null; templateFile = null;
+  resultBlob = null; resultName = '';
+  $('#status-area').innerHTML = '';
+  $('#download-area').innerHTML = '';
+
+  $('#tab-pdf').classList.toggle('active', mode === 'pdf-to-word');
+  $('#tab-word').classList.toggle('active', mode === 'word-to-pdf');
+  $('#panel-pdf').classList.toggle('hidden', mode !== 'pdf-to-word');
+  $('#panel-word').classList.toggle('hidden', mode !== 'word-to-pdf');
+
+  resetDropzone('drop-pdf');
+  resetDropzone('drop-docx');
+  resetDropzone('drop-template');
+  updateConvertBtn();
+}
+
+function updateConvertBtn() {
+  const btn = $('#convert-btn');
+  if (currentMode === 'pdf-to-word') {
+    btn.disabled = !pdfFile;
+    btn.textContent = 'Convert to Word';
+  } else {
+    btn.disabled = !(docxFile && templateFile);
+    btn.textContent = 'Convert to Fillable PDF';
+  }
+}
+
+// ── Dropzone logic ──
+function resetDropzone(id) {
+  const dz = document.getElementById(id);
+  dz.classList.remove('has-file');
+  const isPdf = id !== 'drop-docx';
+  const icon = isPdf ? '📄' : '📝';
+  const ext = isPdf ? '.pdf' : '.docx';
+  const label = id === 'drop-template' ? 'the original PDF template' : `your ${isPdf ? 'PDF' : 'Word'} file here`;
+  dz.innerHTML = `
+    <span class="dropzone-icon">${icon}</span>
+    <div class="dropzone-title">Drop ${label}</div>
+    <div class="dropzone-hint">or click to browse · ${ext} files supported</div>`;
+}
+
+function showFileInDropzone(id, file, type) {
+  const dz = document.getElementById(id);
+  dz.classList.add('has-file');
+  const iconClass = type === 'pdf' ? 'pdf' : 'docx';
+  const icon = type === 'pdf' ? '📄' : '📝';
+  dz.innerHTML = `
+    <div class="file-info">
+      <div class="file-icon ${iconClass}">${icon}</div>
+      <div>
+        <div class="file-name">${file.name}</div>
+        <div class="file-size">${formatSize(file.size)}</div>
+      </div>
+      <button class="remove-btn" onclick="event.stopPropagation(); removeFile('${id}')" title="Remove">✕</button>
+    </div>`;
+}
+
+function removeFile(id) {
+  if (id === 'drop-pdf') pdfFile = null;
+  else if (id === 'drop-docx') docxFile = null;
+  else if (id === 'drop-template') templateFile = null;
+  resetDropzone(id);
+  updateConvertBtn();
+}
+
+function setupDropzone(dzId, inputId, onFile) {
+  const dz = document.getElementById(dzId);
+  const inp = document.getElementById(inputId);
+
+  dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragging'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragging'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('dragging');
+    if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]);
+  });
+  inp.addEventListener('change', () => { if (inp.files[0]) onFile(inp.files[0]); inp.value = ''; });
+}
+
+setupDropzone('drop-pdf', 'input-pdf', (f) => {
+  pdfFile = f;
+  showFileInDropzone('drop-pdf', f, 'pdf');
+  updateConvertBtn();
+});
+setupDropzone('drop-docx', 'input-docx', (f) => {
+  docxFile = f;
+  showFileInDropzone('drop-docx', f, 'docx');
+  updateConvertBtn();
+});
+setupDropzone('drop-template', 'input-template', (f) => {
+  templateFile = f;
+  showFileInDropzone('drop-template', f, 'pdf');
+  updateConvertBtn();
+});
+
+// ── Status rendering ──
+function renderStatus(steps, progress, error) {
+  const iconHtml = error ? '⚠️' : progress < 100 ? '<span class="spinner"></span>' : '✅';
+  const title = error ? 'Conversion failed' : progress < 100 ? 'Converting...' : 'Complete!';
+  let html = `<div class="status-card">
+    <div class="status-header">${iconHtml} ${title}</div>
+    <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+    <div class="steps">`;
+  for (const s of steps) {
+    const cls = s.status === 'done' ? 'done' : s.status === 'active' ? 'active' : '';
+    const mark = s.status === 'done' ? '✓' : s.status === 'active' ? '›' : '·';
+    html += `<div class="step ${cls}"><span>${mark}</span> ${s.label}</div>`;
+  }
+  html += '</div>';
+  if (error) html += `<div class="error-box">${error}</div>`;
+  html += '</div>';
+  $('#status-area').innerHTML = html;
+}
+
+function renderDownload(name) {
+  $('#download-area').innerHTML = `<button class="download-btn" onclick="downloadResult()">↓ Download ${name}</button>`;
+}
+
+function downloadResult() {
+  if (!resultBlob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(resultBlob);
+  a.download = resultName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Extract PDF form fields ──
+async function extractPdfFormFields(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const fields = [];
+  const pageTexts = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const annotations = await page.getAnnotations();
+    const tc = await page.getTextContent();
+    pageTexts.push(tc.items.map(t => t.str).join(' '));
+
+    for (const a of annotations) {
+      if (a.subtype === 'Widget') {
+        fields.push({
+          name: a.fieldName || a.alternativeText || `field_${fields.length}`,
+          type: a.fieldType || 'Tx',
+          value: a.fieldValue || a.buttonValue || '',
+          options: a.options || [],
+          page: i,
+          rect: a.rect,
+          maxLen: a.maxLen,
+          readOnly: a.readOnly || false,
+          required: a.required || false,
+          multiLine: a.multiLine || false,
+          isCheckbox: a.checkBox || false,
+          isRadio: a.radioButton || false,
+          exportValues: a.exportValue,
+          defaultValue: a.defaultFieldValue || '',
+        });
+      }
+    }
+  }
+  return { fields, pageTexts, numPages: pdf.numPages };
+}
+
+// ── Generate DOCX ──
+async function generateDocxFromFields(fields, pageTexts, fileName) {
+  let body = '';
+  body += `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr>
+    <w:r><w:rPr><w:b/><w:sz w:val="48"/></w:rPr>
+    <w:t>${escXml(fileName.replace(/\.pdf$/i,''))}</w:t></w:r></w:p>`;
+  body += `<w:p><w:r><w:rPr><w:color w:val="888888"/><w:sz w:val="20"/></w:rPr>
+    <w:t>Converted from fillable PDF — Edit values below and convert back to PDF</w:t></w:r></w:p><w:p/>`;
+
+  const byPage = {};
+  fields.forEach(f => { (byPage[f.page] = byPage[f.page] || []).push(f); });
+
+  for (const [page, pf] of Object.entries(byPage)) {
+    body += `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>Page ${page}</w:t></w:r></w:p>`;
+
+    body += `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>
+      <w:tblBorders>
+        <w:top w:val="single" w:sz="4" w:color="DDDDDD"/>
+        <w:left w:val="single" w:sz="4" w:color="DDDDDD"/>
+        <w:bottom w:val="single" w:sz="4" w:color="DDDDDD"/>
+        <w:right w:val="single" w:sz="4" w:color="DDDDDD"/>
+        <w:insideH w:val="single" w:sz="4" w:color="DDDDDD"/>
+        <w:insideV w:val="single" w:sz="4" w:color="DDDDDD"/>
+      </w:tblBorders></w:tblPr>`;
+
+    body += `<w:tr>
+      <w:tc><w:tcPr><w:shd w:val="clear" w:fill="F5F5F5"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>Field Name</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:shd w:val="clear" w:fill="F5F5F5"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>Type</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:shd w:val="clear" w:fill="F5F5F5"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>Value</w:t></w:r></w:p></w:tc>
+    </w:tr>`;
+
+    for (const f of pf) {
+      const typeLabel = f.isCheckbox ? 'Checkbox' : f.isRadio ? 'Radio' : f.type === 'Ch' ? 'Dropdown' : f.type === 'Sig' ? 'Signature' : 'Text';
+      const val = f.isCheckbox ? (f.value ? '☑ Checked' : '☐ Unchecked') : (f.value || '');
+      const highlight = val ? '<w:shd w:val="clear" w:fill="FFF8E1"/>' : '';
+
+      body += `<w:tr>
+        <w:tc><w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${escXml(f.name)}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:rPr><w:sz w:val="20"/><w:color w:val="888888"/></w:rPr><w:t>${escXml(typeLabel)}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr>${highlight}</w:tcPr><w:p><w:r><w:rPr><w:sz w:val="20"/><w:b/></w:rPr><w:t>${escXml(val)}</w:t></w:r></w:p></w:tc>
+      </w:tr>`;
+    }
+    body += '</w:tbl><w:p/>';
+  }
+
+  // Embed metadata for round-trip
+  const meta = fields.map(f => ({ name:f.name, type:f.type, page:f.page, rect:f.rect, isCheckbox:f.isCheckbox, isRadio:f.isRadio, options:f.options, maxLen:f.maxLen }));
+  body += `<w:p><w:r><w:rPr><w:color w:val="AAAAAA"/><w:sz w:val="16"/></w:rPr>
+    <w:t>— Do not remove metadata below — this enables conversion back to PDF —</w:t></w:r></w:p>`;
+  body += `<w:p><w:r><w:rPr><w:color w:val="AAAAAA"/><w:sz w:val="16"/></w:rPr>
+    <w:t>FORM_METADATA_START|${btoa(JSON.stringify(meta))}|FORM_METADATA_END</w:t></w:r></w:p>`;
+
+  // Build DOCX zip
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+  zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>${body}</w:body>
+</w:document>`);
+  zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`);
+
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+// ── Parse DOCX back ──
+async function parseDocxForFields(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXml = await zip.file('word/document.xml').async('string');
+  const texts = [...docXml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
+  const fullText = texts.map(m => m[1]).join('');
+
+  const metaMatch = fullText.match(/FORM_METADATA_START\|([^|]+)\|FORM_METADATA_END/);
+  if (!metaMatch) throw new Error('No form metadata found in this Word document. Only documents created by this converter can be converted back to PDF.');
+
+  const fieldMeta = JSON.parse(atob(metaMatch[1]));
+
+  // Extract edited values from table rows
+  const rows = [...docXml.matchAll(/<w:tr>([\s\S]*?)<\/w:tr>/g)];
+  const fieldValues = [];
+  for (const row of rows) {
+    const cells = [...row[1].matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)];
+    if (cells.length >= 3) {
+      const cellText = (xml) => [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('');
+      const name = cellText(cells[0][1]);
+      const val = cellText(cells[2][1]);
+      if (name && name !== 'Field Name') fieldValues.push({ name, value: val });
+    }
+  }
+  return { fieldMeta, fieldValues };
+}
+
+// ── Fill PDF ──
+async function generateFilledPdf(pdfBuffer, fieldMeta, fieldValues) {
+  const pdfDoc = await PDFLib.PDFDocument.load(pdfBuffer);
+  const form = pdfDoc.getForm();
+
+  for (const fv of fieldValues) {
+    const meta = fieldMeta.find(m => m.name === fv.name);
+    if (!meta) continue;
+    try {
+      if (meta.isCheckbox) {
+        const field = form.getCheckBox(fv.name);
+        (fv.value.includes('Checked') || fv.value === 'true' || fv.value === 'Yes') ? field.check() : field.uncheck();
+      } else if (meta.isRadio) {
+        const field = form.getRadioGroup(fv.name);
+        if (fv.value) field.select(fv.value);
+      } else if (meta.type === 'Ch') {
+        const field = form.getDropdown(fv.name);
+        if (fv.value) field.select(fv.value);
+      } else {
+        const field = form.getTextField(fv.name);
+        field.setText(fv.value || '');
+      }
+    } catch(e) { console.warn('Field skip:', fv.name, e.message); }
+  }
+  return pdfDoc.save();
+}
+
+// ── Conversion handler ──
+async function handleConvert() {
+  const btn = $('#convert-btn');
+  btn.disabled = true;
+  btn.textContent = 'Converting...';
+  $('#download-area').innerHTML = '';
+  resultBlob = null;
+
+  if (currentMode === 'pdf-to-word') {
+    const steps = [
+      { label: 'Reading PDF file', status: 'active' },
+      { label: 'Extracting form fields', status: 'pending' },
+      { label: 'Building Word document', status: 'pending' },
+      { label: 'Packaging .docx file', status: 'pending' },
+    ];
+    renderStatus(steps, 10, null);
+
+    try {
+      const buf = await pdfFile.arrayBuffer();
+      steps[0].status = 'done'; steps[1].status = 'active';
+      renderStatus(steps, 30, null);
+
+      const { fields, pageTexts, numPages } = await extractPdfFormFields(buf);
+      if (fields.length === 0) throw new Error(`No fillable form fields found in this PDF (${numPages} page${numPages>1?'s':''} scanned). This converter works with fillable/interactive PDF forms only.`);
+
+      steps[1].status = 'done'; steps[2].status = 'active';
+      renderStatus(steps, 55, null);
+
+      const blob = await generateDocxFromFields(fields, pageTexts, pdfFile.name);
+      steps[2].status = 'done'; steps[3].status = 'active';
+      renderStatus(steps, 85, null);
+
+      resultName = pdfFile.name.replace(/\.pdf$/i,'') + '.docx';
+      resultBlob = blob;
+      steps[3].status = 'done';
+      renderStatus(steps, 100, null);
+      renderDownload(resultName);
+    } catch(e) {
+      renderStatus(steps, 100, e.message);
+    }
+  } else {
+    const steps = [
+      { label: 'Reading Word document', status: 'active' },
+      { label: 'Extracting form field values', status: 'pending' },
+      { label: 'Loading original PDF template', status: 'pending' },
+      { label: 'Filling PDF form fields', status: 'pending' },
+    ];
+    renderStatus(steps, 10, null);
+
+    try {
+      const buf = await docxFile.arrayBuffer();
+      steps[0].status = 'done'; steps[1].status = 'active';
+      renderStatus(steps, 30, null);
+
+      const { fieldMeta, fieldValues } = await parseDocxForFields(buf);
+      steps[1].status = 'done'; steps[2].status = 'active';
+      renderStatus(steps, 50, null);
+
+      const pdfBuf = await templateFile.arrayBuffer();
+      steps[2].status = 'done'; steps[3].status = 'active';
+      renderStatus(steps, 70, null);
+
+      const filledPdf = await generateFilledPdf(pdfBuf, fieldMeta, fieldValues);
+      resultBlob = new Blob([filledPdf], { type: 'application/pdf' });
+      resultName = docxFile.name.replace(/\.docx$/i,'') + '_filled.pdf';
+      steps[3].status = 'done';
+      renderStatus(steps, 100, null);
+      renderDownload(resultName);
+    } catch(e) {
+      renderStatus(steps, 100, e.message);
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = currentMode === 'pdf-to-word' ? 'Convert to Word' : 'Convert to Fillable PDF';
+  updateConvertBtn();
+}
+</script>
+</body>
+</html>
